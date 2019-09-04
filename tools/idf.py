@@ -386,6 +386,7 @@ def monitor(action, ctx, args, print_filter):
         )
     idf_monitor = os.path.join(os.environ["IDF_PATH"], "tools/idf_monitor.py")
     monitor_args = [PYTHON, idf_monitor]
+    monitor_args += ["--toolchain-prefix", "xtensa-lx106-elf-"]
     if args.port is not None:
         monitor_args += ["-p", args.port]
     monitor_args += ["-b", project_desc["monitor_baud"]]
