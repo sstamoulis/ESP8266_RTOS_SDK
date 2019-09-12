@@ -19,7 +19,6 @@
 
 #include <esp_http_server.h>
 #include "esp_httpd_priv.h"
-#include <sys/fcntl.h>
 
 static const char *TAG = "httpd_sess";
 
@@ -78,7 +77,11 @@ esp_err_t httpd_sess_new(struct httpd_data *hd, int newfd)
             /* Call user-defined session opening function */
             if (hd->config.open_fn) {
                 esp_err_t ret = hd->config.open_fn(hd, hd->hd_sd[i].fd);
-                if (ret != ESP_OK) return ret;
+                if (ret != ESP_OK) {
+                    httpd_sess_delete(hd, hd->hd_sd[i].fd);
+                    ESP_LOGD(TAG, LOG_FMT("open_fn failed for fd = %d"), newfd);
+                    return ret;
+                }
             }
             return ESP_OK;
         }
@@ -193,10 +196,10 @@ void httpd_sess_set_descriptors(struct httpd_data *hd,
 /** Check if a FD is valid */
 static int fd_is_valid(int fd)
 {
-    return fcntl(fd, F_GETFD, 0) != -1 || errno != EBADF;
+    return fcntl(fd, F_GETFD) != -1 || errno != EBADF;
 }
 
-static inline uint64_t httpd_sess_get_lru_counter()
+static inline uint64_t httpd_sess_get_lru_counter(void)
 {
     static uint64_t lru_counter = 0;
     return lru_counter++;
@@ -375,6 +378,10 @@ static void httpd_sess_close(void *arg)
 {
     struct sock_db *sock_db = (struct sock_db *)arg;
     if (sock_db) {
+        if (sock_db->lru_counter == 0) {
+            ESP_LOGD(TAG, "Skipping session close for %d as it seems to be a race condition", sock_db->fd);
+            return;
+        }
         int fd = sock_db->fd;
         struct httpd_data *hd = (struct httpd_data *) sock_db->handle;
         httpd_sess_delete(hd, fd);
